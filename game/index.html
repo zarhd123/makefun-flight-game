@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky Courier — a 3D flight game</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1622;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hud { position: fixed; color: #eef4fa; text-shadow: 0 1px 3px rgba(0,0,0,0.8); pointer-events: none; z-index: 5; }
+  .hud-box { background: rgba(8, 16, 28, 0.55); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 8px; padding: 8px 12px; }
+  .hud-label { font-size: 10px; letter-spacing: 0.14em; color: #9db4c8; }
+  .hud-value { font-size: 26px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .hud-unit { font-size: 11px; color: #c8d8e8; margin-left: 3px; }
+  #hud-left { top: 12px; left: 12px; display: flex; gap: 8px; }
+  #hud-right { top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  #hud-compass { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; border-radius: 6px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; }
+  .bar { width: 130px; height: 10px; background: rgba(255,255,255,0.15); border-radius: 5px; overflow: hidden; position: relative; }
+  .bar > div { height: 100%; border-radius: 5px; }
+  #hud-thr-fill { background: linear-gradient(90deg, #2f9e5f, #7dffb0); width: 0%; }
+  #hud-vsi-fill { background: #ffb020; width: 0%; left: 50%; position: absolute; }
+  .bar-text { font-size: 11px; color: #c8d8e8; min-width: 86px; }
+  #hud-message { position: fixed; top: 84px; left: 50%; transform: translateX(-50%); z-index: 5;
+    background: rgba(8, 16, 28, 0.72); border: 1px solid rgba(255,176,32,0.6); color: #ffe1a0;
+    padding: 8px 18px; border-radius: 20px; font-size: 15px; font-weight: 600;
+    transition: opacity 0.4s; pointer-events: none; white-space: nowrap; }
+  #hud-attitude { position: fixed; left: 12px; bottom: 12px; z-index: 5; border-radius: 50%;
+    background: rgba(8, 16, 28, 0.55); border: 1px solid rgba(255,255,255,0.18); }
+  #hud-minimap { position: fixed; right: 12px; bottom: 12px; z-index: 5; border-radius: 8px;
+    background: rgba(8, 16, 28, 0.55); border: 1px solid rgba(255,255,255,0.18); }
+  #hud-help { position: fixed; left: 122px; bottom: 12px; z-index: 5; font-size: 11px; color: #c8d8e8;
+    background: rgba(8, 16, 28, 0.45); padding: 6px 10px; border-radius: 6px; line-height: 1.5; }
+  #gauges-wrap { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 6; display: none; }
+  .screen { position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(6,12,22,0.25) 0%, rgba(6,12,22,0.72) 100%); }
+  .panel { width: 620px; max-width: 92vw; background: rgba(8, 16, 28, 0.86); border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 14px; padding: 28px 34px; color: #eef4fa; text-align: center; }
+  .panel h1 { margin: 0 0 4px; font-size: 46px; letter-spacing: 0.06em; color: #ffb020; }
+  .panel h2 { margin: 0 0 14px; font-size: 28px; }
+  .panel p { margin: 6px 0; font-size: 15px; line-height: 1.55; color: #c8d8e8; }
+  .panel .prompt { margin-top: 18px; font-size: 17px; font-weight: 700; color: #7dffb0; }
+  .panel .keys { font-size: 13px; color: #9db4c8; margin-top: 12px; line-height: 1.7; }
+  .panel .keys b { color: #eef4fa; }
+  /* Staged title shot: the panel steps to the right so the parked plane reads
+     at the left of the frame instead of behind it. */
+  body.shot-title #screen-title { justify-content: flex-end; }
+  body.shot-title #screen-title .panel { margin-right: 36px; }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Sky Courier: fly the bush plane through the rings and land on the runway"></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+
+<div id="hud-left" class="hud">
+  <div class="hud-box"><div class="hud-label">ALTITUDE</div><div><span class="hud-value" id="hud-alt">00000</span><span class="hud-unit">FT</span></div></div>
+  <div class="hud-box"><div class="hud-label">AIRSPEED</div><div><span class="hud-value" id="hud-spd">000</span><span class="hud-unit">KT</span></div></div>
+  <div class="hud-box"><div class="hud-label">HEADING</div><div><span class="hud-value" id="hud-hdg">090</span><span class="hud-unit">&deg;</span></div></div>
+</div>
+
+<canvas id="hud-compass" width="360" height="34"></canvas>
+
+<div id="hud-right" class="hud">
+  <div class="hud-box">
+    <div class="bar-row"><div class="bar"><div id="hud-thr-fill"></div></div><span class="bar-text" id="hud-thr-text">THR 0%</span></div>
+    <div class="bar-row" style="margin-top:6px"><div class="bar"><div id="hud-vsi-fill"></div></div><span class="bar-text" id="hud-vsi-text">VSI +0 FPM</span></div>
+  </div>
+  <div class="hud-box"><div class="hud-label">SCORE &middot; TIME &middot; RINGS</div>
+    <div><span class="hud-value" id="hud-score">0</span><span class="hud-unit" id="hud-time">00:00</span><span class="hud-unit">&nbsp;&middot;&nbsp;</span><span class="hud-value" style="font-size:20px" id="hud-rings">0/8</span></div></div>
+</div>
+
+<div id="hud-message" style="opacity:0"></div>
+<canvas id="hud-attitude" width="96" height="96"></canvas>
+<canvas id="hud-minimap" width="190" height="190"></canvas>
+<div id="hud-help">W/S throttle &middot; &uarr;/&darr; pitch &middot; &larr;/&rarr; roll &middot; Q/E rudder<br>
+B airbrake &middot; C camera &middot; P pause &middot; drag mouse to steer</div>
+<div id="gauges-wrap"><canvas id="hud-gauges" width="500" height="104"></canvas></div>
+
+<div id="screen-title" class="screen"><div class="panel">
+  <h1>SKY COURIER</h1>
+  <p>Fly the bush plane around the island of Kalandra: thread all eight glowing rings,
+     then bring her home and land on runway 09.</p>
+  <p>Stall and she sinks. Hit a mountain and the run is over. Land gently on the
+     asphalt for the time and course bonuses.</p>
+  <p id="title-best"></p>
+  <p class="prompt">Press Space or click to fly</p>
+  <p class="keys"><b>W/S</b> throttle &nbsp;&middot;&nbsp; <b>&uarr;/&darr;</b> pitch &nbsp;&middot;&nbsp; <b>&larr;/&rarr;</b> roll &nbsp;&middot;&nbsp; <b>Q/E</b> rudder<br>
+  <b>B</b> airbrake &nbsp;&middot;&nbsp; <b>C</b> cockpit / chase camera &nbsp;&middot;&nbsp; <b>P</b> pause &nbsp;&middot;&nbsp; mouse drag steers, wheel is throttle</p>
+</div></div>
+
+<div id="screen-paused" class="screen"><div class="panel">
+  <h2>Paused</h2>
+  <p>The island will wait for you.</p>
+  <p class="prompt">Press P to keep flying</p>
+</div></div>
+
+<div id="screen-ended" class="screen"><div class="panel">
+  <h2 id="ended-title">Run over</h2>
+  <div id="ended-lines"></div>
+  <p class="prompt">Press Space to fly again</p>
+</div></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
